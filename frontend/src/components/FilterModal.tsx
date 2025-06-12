@@ -14,8 +14,7 @@ interface FilterModalProps {
 const FilterModal: React.FC<FilterModalProps> = ({ isOpen, onClose, onApplyFilter }) => {
   const [dateFrom, setDateFrom] = useState("")
   const [dateTo, setDateTo] = useState("")
-  const [importance, setImportance] = useState<"all" | "important" | "normal">("all")
-  const [keywords, setKeywords] = useState("")
+  const [showImportantOnly, setShowImportantOnly] = useState(false)
 
   if (!isOpen) return null
 
@@ -23,8 +22,7 @@ const FilterModal: React.FC<FilterModalProps> = ({ isOpen, onClose, onApplyFilte
     const filters: FilterOptions = {
       dateFrom: dateFrom ? new Date(dateFrom) : undefined,
       dateTo: dateTo ? new Date(dateTo) : undefined,
-      importance,
-      keywords: keywords ? keywords.split(",").map((k) => k.trim()) : undefined,
+      importance: showImportantOnly ? "important" : "all",
     }
     onApplyFilter(filters)
   }
@@ -35,7 +33,7 @@ const FilterModal: React.FC<FilterModalProps> = ({ isOpen, onClose, onApplyFilte
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-2">
             <Filter className="w-5 h-5 text-indigo-600" />
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Smart Filter</h2>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Smart Highlighting</h2>
           </div>
           <button
             onClick={onClose}
@@ -71,45 +69,18 @@ const FilterModal: React.FC<FilterModalProps> = ({ isOpen, onClose, onApplyFilte
             </div>
           </div>
 
-          {/* Importance */}
+          {/* Show Important Only */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Message Importance
+            <label className="flex items-center space-x-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showImportantOnly}
+                onChange={(e) => setShowImportantOnly(e.target.checked)}
+                className="rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">Show important messages only</span>
+              <Star className="w-4 h-4 text-yellow-400 ml-1" />
             </label>
-            <div className="space-y-2">
-              {[
-                { value: "all", label: "All Messages" },
-                { value: "important", label: "Important Only" },
-                { value: "normal", label: "Normal Only" },
-              ].map((option) => (
-                <label key={option.value} className="flex items-center">
-                  <input
-                    type="radio"
-                    name="importance"
-                    value={option.value}
-                    checked={importance === option.value}
-                    onChange={(e) => setImportance(e.target.value as any)}
-                    className="mr-2"
-                  />
-                  <span className="text-sm text-gray-700 dark:text-gray-300">{option.label}</span>
-                  {option.value === "important" && <Star className="w-4 h-4 text-yellow-400 ml-1" />}
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Keywords */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Keywords (comma-separated)
-            </label>
-            <input
-              type="text"
-              value={keywords}
-              onChange={(e) => setKeywords(e.target.value)}
-              placeholder="meeting, maintenance, urgent"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white"
-            />
           </div>
         </div>
 
@@ -124,7 +95,7 @@ const FilterModal: React.FC<FilterModalProps> = ({ isOpen, onClose, onApplyFilte
             onClick={handleApply}
             className="flex-1 px-4 py-2 bg-indigo-600 dark:bg-indigo-700 text-white rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-800"
           >
-            Apply Filter
+            Apply
           </button>
         </div>
       </div>

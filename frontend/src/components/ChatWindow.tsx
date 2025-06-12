@@ -2,11 +2,26 @@
 
 import type React from "react"
 import { useState, useEffect, useCallback, useRef } from "react"
-import { Send, Bot, Copy, Shield, Calendar, Star, MoreVertical, Phone, Video, Check } from "lucide-react"
+import {
+  Send,
+  Bot,
+  Copy,
+  Shield,
+  Calendar,
+  Star,
+  MoreVertical,
+  Phone,
+  Video,
+  Check,
+  X,
+  AlertTriangle,
+} from "lucide-react"
 import type { Chat, Message, User } from "../types"
 import { apiService, type TelegramMessage } from "../services/api"
-import { GoogleGenerativeAI } from '@google/generative-ai';
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
+import { GoogleGenerativeAI } from "@google/generative-ai"
+import SummaryModal from "./SummaryModal"
+import { useToast } from "../hooks/useToast"
+const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || "")
 
 interface ChatWindowProps {
   chat: Chat
@@ -20,12 +35,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chat, messages: propMessages, u
   const [newMessage, setNewMessage] = useState("")
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null)
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([])
-  const [showAiSuggestions, setShowAiSuggestions] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [markingMode, setMarkingMode] = useState<"none" | "start" | "end">("none")
   const [markedMessages, setMarkedMessages] = useState<string[]>([])
   const messagesContainerRef = useRef<HTMLDivElement>(null)
 
+  const [showAiSuggestions, setShowAiSuggestions] = useState(false)
+  const [aiSuggestionsHeight, setAiSuggestionsHeight] = useState("auto")
+  const [showSummaryModal, setShowSummaryModal] = useState(false)
+  const [summaryContent, setSummaryContent] = useState("")
+
+  const { addToast } = useToast()
 
   // Use ref to track the current chat ID and prevent duplicate requests
   const currentChatId = useRef<string | null>(null)
@@ -73,6 +93,25 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chat, messages: propMessages, u
 
           setMessages(sortedMessages)
 
+          // Show toast for AI-detected important messages and events
+          const importantCount = sortedMessages.filter((m) => m.isImportant).length
+          const eventCount = sortedMessages.filter((m) => m.hasEvent).length
+          const fakeNewsCount = sortedMessages.filter((m) => m.isFakeNews).length
+
+          if (importantCount > 0 || eventCount > 0 || fakeNewsCount > 0) {
+            const toastMessage = "AI Analysis Complete: "
+            const parts = []
+            if (importantCount > 0) parts.push(`${importantCount} important message${importantCount > 1 ? "s" : ""}`)
+            if (eventCount > 0) parts.push(`${eventCount} event${eventCount > 1 ? "s" : ""} detected`)
+            if (fakeNewsCount > 0) parts.push(`${fakeNewsCount} potential misinformation`)
+
+            addToast({
+              type: fakeNewsCount > 0 ? "warning" : "info",
+              title: "AI Analysis Complete",
+              message: parts.join(", "),
+            })
+          }
+
           // Notify parent component if callback provided
           if (onMessagesUpdate) {
             onMessagesUpdate(sortedMessages)
@@ -89,7 +128,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chat, messages: propMessages, u
         isLoadingRef.current = false
       }
     },
-    [onMessagesUpdate],
+    [onMessagesUpdate, addToast],
   )
 
   useEffect(() => {
@@ -104,9 +143,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chat, messages: propMessages, u
       setMessages([])
       setSelectedMessage(null)
       setShowAiSuggestions(false)
+      setMarkingMode("none")
+      setMarkedMessages([])
       currentChatId.current = null
     }
   }, [chat.id])
+
+  useEffect(() => {
+    // Scroll to bottom when messages change
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight
+    }
+  }, [messages])
 
   const handleSendMessage = () => {
     if (!newMessage.trim() || !user) return
@@ -125,15 +173,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chat, messages: propMessages, u
     setShowAiSuggestions(false)
   }
 
-const generateAiSuggestions = async (selectedMessage: Message) => {
+  const generateAiSuggestions = async (selectedMessage: Message) => {
     try {
       // Get the model
-      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" })
 
       // Format chat history for context
-      const chatHistory = messages
-        .map(msg => `${msg.senderName}: ${msg.content}`)
-        .join('\n');
+      const chatHistory = messages.map((msg) => `${msg.senderName}: ${msg.content}`).join("\n")
 
       // Create the prompt
       const prompt = `Given the following chat history and the selected message, suggest 3 appropriate responses. Each response should be a complete sentence and start on a new line. Do not include numbers, bullet points, or any other formatting.
@@ -144,35 +190,29 @@ ${chatHistory}
 Selected Message:
 ${selectedMessage.senderName}: ${selectedMessage.content}
 
-Provide exactly 3 responses, one per line:`;
+Provide exactly 3 responses, one per line:`
 
       // Generate content
-      const result = await model.generateContent(prompt);
-      const response = await result.response;
-      const suggestions = response.text()
-      .split('\n')
-      .map(s => s.replace(/^\d+\.\s*|\*\*|^[-•]\s*/g, '').trim())
-      .filter(s => s.length > 0 && s.endsWith('.'));
+      const result = await model.generateContent(prompt)
+      const response = await result.response
+      const suggestions = response
+        .text()
+        .split("\n")
+        .map((s) => s.replace(/^\d+\.\s*|\*\*|^[-•]\s*/g, "").trim())
+        .filter((s) => s.length > 0 && s.endsWith("."))
 
       // Take first 3 suggestions
-      setAiSuggestions(suggestions.slice(0, 3));
-      setShowAiSuggestions(true);
+      setAiSuggestions(suggestions.slice(0, 3))
+      setShowAiSuggestions(true)
     } catch (error) {
-      console.error('Error generating AI suggestions:', error);
-      // Fallback to default suggestions if API call fails
-      // setAiSuggestions([
-      //   "Thank you for the update!",
-      //   "I'll be there on time.",
-      //   "Could you provide more details about this?"
-      // ]);
-      // setShowAiSuggestions(true);
+      console.error("Error generating AI suggestions:", error)
     }
-  };
+  }
 
   const handleMessageClick = (message: Message) => {
     setSelectedMessage(message)
     // Generate AI suggestions for reply
-    generateAiSuggestions(message);
+    generateAiSuggestions(message)
   }
 
   const handleCopySuggestion = (suggestion: string) => {
@@ -185,7 +225,13 @@ Provide exactly 3 responses, one per line:`;
     setMessages(
       messages.map((m) => {
         if (m.id === message.id) {
-          return { ...m, isImportant: !m.isImportant }
+          const isImportant = !m.isImportant
+          addToast({
+            type: isImportant ? "success" : "info",
+            title: isImportant ? "Message marked as important" : "Message unmarked as important",
+            message: `"${m.content.substring(0, 50)}${m.content.length > 50 ? "..." : ""}"`,
+          })
+          return { ...m, isImportant }
         }
         return m
       }),
@@ -196,7 +242,13 @@ Provide exactly 3 responses, one per line:`;
     setMessages(
       messages.map((m) => {
         if (m.id === message.id) {
-          return { ...m, hasEvent: !m.hasEvent }
+          const hasEvent = !m.hasEvent
+          addToast({
+            type: hasEvent ? "success" : "info",
+            title: hasEvent ? "Event added to calendar" : "Event removed from calendar",
+            message: `"${m.content.substring(0, 50)}${m.content.length > 50 ? "..." : ""}"`,
+          })
+          return { ...m, hasEvent }
         }
         return m
       }),
@@ -204,9 +256,19 @@ Provide exactly 3 responses, one per line:`;
   }
 
   const checkFakeNews = async (message: Message) => {
-    // Simulate fake news detection
-    const isFake = Math.random() > 0.7 // 30% chance of being fake
-    alert(`Fact Check Result: This message appears to be ${isFake ? "potentially misleading" : "reliable"}`)
+    if (message.isFakeNews) {
+      addToast({
+        type: "warning",
+        title: "Potential Misinformation Detected",
+        message: "This message has been flagged by AI as potentially containing misinformation",
+      })
+    } else {
+      addToast({
+        type: "success",
+        title: "Fact Check Result",
+        message: "This message appears to be reliable based on AI analysis",
+      })
+    }
   }
 
   const handleMarkMessage = (messageId: string) => {
@@ -231,15 +293,7 @@ Provide exactly 3 responses, one per line:`;
     }
   }
 
-  const toggleMarkMessage = (messageId: string) => {
-    if (markedMessages.includes(messageId)) {
-      setMarkedMessages(markedMessages.filter((id) => id !== messageId))
-    } else {
-      setMarkedMessages([...markedMessages, messageId])
-    }
-  }
-
-    const handleSummarize = () => {
+  const handleSummarize = () => {
     if (markedMessages.length === 0) return
 
     const selectedMessages = messages.filter((m) => markedMessages.includes(m.id))
@@ -257,48 +311,9 @@ Key points:
 
 AI generated summary based on selected messages.`
 
-    alert(summary)
+    setSummaryContent(summary)
+    setShowSummaryModal(true)
     setMarkedMessages([])
-  }
-
-  const addToCalendar = (message: Message) => {
-    if (message.eventDetails) {
-      alert(
-        `Event "${message.eventDetails.title}" added to your calendar for ${message.eventDetails.date.toLocaleDateString()} at ${message.eventDetails.time}`,
-      )
-    } else {
-      alert("No event information found in this message")
-    }
-  }
-
-  const formatTimestamp = (timestamp: Date) => {
-    const now = new Date()
-    const messageDate = new Date(timestamp)
-    const diffInHours = (now.getTime() - messageDate.getTime()) / (1000 * 60 * 60)
-
-    if (diffInHours < 24) {
-      return messageDate.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    } else if (diffInHours < 48) {
-      return (
-        "Yesterday " +
-        messageDate.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      )
-    } else {
-      return (
-        messageDate.toLocaleDateString() +
-        " " +
-        messageDate.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      )
-    }
   }
 
   return (
@@ -373,18 +388,34 @@ AI generated summary based on selected messages.`
         className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50 dark:bg-gray-900/50"
         style={{ height: "400px" }}
       >
+        {isLoading && (
+          <div className="flex items-center justify-center py-8">
+            <div className="flex items-center space-x-2 text-gray-500">
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></div>
+              <span>Analyzing messages with AI...</span>
+            </div>
+          </div>
+        )}
+
         {messages.map((message) => (
           <div
             key={message.id}
             className={`flex ${message.senderId === user?.id ? "justify-end" : "justify-start"} group`}
           >
-            {markedMessages.includes(message.id) && (
+            {markingMode !== "none" && (
               <div className="flex items-center mr-2">
                 <div
-                  className="w-5 h-5 rounded border border-indigo-500 flex items-center justify-center bg-indigo-100 dark:bg-indigo-900/30 cursor-pointer"
-                  onClick={() => toggleMarkMessage(message.id)}
+                  className={`w-5 h-5 rounded border ${
+                    markedMessages.includes(message.id)
+                      ? "border-indigo-500 bg-indigo-100 dark:bg-indigo-900/30"
+                      : "border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800"
+                  }
+              flex items-center justify-center cursor-pointer hover:border-indigo-500`}
+                  onClick={() => handleMarkMessage(message.id)}
                 >
-                  <Check className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                  {markedMessages.includes(message.id) && (
+                    <Check className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                  )}
                 </div>
               </div>
             )}
@@ -393,22 +424,65 @@ AI generated summary based on selected messages.`
               className={`relative max-w-xs lg:max-w-md px-6 py-4 rounded-2xl cursor-pointer transition-all hover:shadow-lg ${
                 message.senderId === user?.id
                   ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white"
-                  : "bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-gray-700"
+                  : `bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm border ${
+                      message.isFakeNews
+                        ? "border-red-300 dark:border-red-700 bg-red-50 dark:bg-red-900/10"
+                        : message.isImportant
+                          ? "border-yellow-300 dark:border-yellow-700 bg-yellow-50 dark:bg-yellow-900/10"
+                          : "border-gray-200 dark:border-gray-700"
+                    }`
               } ${selectedMessage?.id === message.id ? "ring-2 ring-indigo-500" : ""}`}
               onClick={() => handleMessageClick(message)}
-              onMouseEnter={() => {
-                if (markingMode === "start" && markedMessages.length === 0) {
-                  // Show "Mark as Start" tooltip
-                } else if (markingMode === "end" && markedMessages.length === 1) {
-                  // Show "Mark as End" tooltip
-                }
-              }}
             >
               {message.senderId !== user?.id && (
                 <p className="text-xs font-medium mb-2 opacity-70">{message.senderName}</p>
               )}
 
+              {/* AI Detection Badges */}
+              {(message.isImportant || message.isFakeNews || message.hasEvent) && (
+                <div className="flex flex-wrap gap-1 mb-2">
+                  {message.isImportant && (
+                    <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300 text-xs rounded-full flex items-center">
+                      <Star className="w-3 h-3 mr-1" />
+                      Important
+                    </span>
+                  )}
+                  {message.hasEvent && (
+                    <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 text-xs rounded-full flex items-center">
+                      <Calendar className="w-3 h-3 mr-1" />
+                      Event
+                    </span>
+                  )}
+                  {message.isFakeNews && (
+                    <span className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-300 text-xs rounded-full flex items-center">
+                      <AlertTriangle className="w-3 h-3 mr-1" />
+                      Potential Misinformation
+                    </span>
+                  )}
+                </div>
+              )}
+
               <p className="text-sm leading-relaxed">{message.content}</p>
+
+              {/* Event Details */}
+              {message.hasEvent && message.eventDetails && (
+                <div className="mt-3 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-700">
+                  <div className="flex items-center space-x-2 mb-1">
+                    <Calendar className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                    <span className="font-medium text-blue-800 dark:text-blue-300 text-sm">
+                      {message.eventDetails.title}
+                    </span>
+                  </div>
+                  <div className="text-xs text-blue-600 dark:text-blue-400">
+                    {message.eventDetails.date.toLocaleDateString()} at {message.eventDetails.time}
+                  </div>
+                  {message.eventDetails.description && (
+                    <div className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                      {message.eventDetails.description}
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="flex items-center justify-between mt-3">
                 <span className="text-xs opacity-70">
@@ -453,44 +527,57 @@ AI generated summary based on selected messages.`
                       checkFakeNews(message)
                     }}
                     className="p-1 hover:bg-black/10 rounded"
-                    title="Check if this is fake news"
+                    title="Check fact verification status"
                   >
-                    <Shield className="w-3 h-3 text-gray-400 dark:text-gray-500 hover:text-red-400" />
+                    <Shield
+                      className={`w-3 h-3 ${
+                        message.isFakeNews ? "text-red-400" : "text-gray-400 dark:text-gray-500"
+                      } hover:text-red-400`}
+                    />
                   </button>
                 </div>
               </div>
 
               {markingMode === "start" && markedMessages.length === 0 && (
-                <div className="absolute -left-20 top-1/2 transform -translate-y-1/2 bg-indigo-600 text-white px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute -left-20 top-1/2 transform -translate-y-1/2 bg-indigo-600 text-white px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                   Mark as Start
                 </div>
               )}
 
               {markingMode === "end" && markedMessages.length === 1 && (
-                <div className="absolute -left-20 top-1/2 transform -translate-y-1/2 bg-indigo-600 text-white px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute -left-20 top-1/2 transform -translate-y-1/2 bg-indigo-600 text-white px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
                   Mark as End
                 </div>
               )}
             </div>
-
-            {!markedMessages.includes(message.id) && markingMode !== "none" && (
-              <div className="flex items-center ml-2">
-                <div
-                  className="w-5 h-5 rounded border border-gray-300 dark:border-gray-600 cursor-pointer hover:border-indigo-500 dark:hover:border-indigo-400"
-                  onClick={() => handleMarkMessage(message.id)}
-                ></div>
-              </div>
-            )}
           </div>
         ))}
       </div>
 
-      {/* AI Suggestions */}
       {showAiSuggestions && (
-        <div className="p-6 bg-blue-50 dark:bg-blue-900/20 border-t border-blue-200 dark:border-blue-800">
-          <div className="flex items-center space-x-2 mb-4">
-            <Bot className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-            <span className="text-sm font-medium text-blue-900 dark:text-blue-300">AI Suggestions</span>
+        <div
+          className="p-6 bg-blue-50 dark:bg-blue-900/20 border-t border-blue-200 dark:border-blue-800"
+          style={{ maxHeight: aiSuggestionsHeight, overflow: "auto" }}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center space-x-2">
+              <Bot className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+              <span className="text-sm font-medium text-blue-900 dark:text-blue-300">AI Suggestions</span>
+            </div>
+            <div className="flex items-center space-x-2">
+              <button
+                onClick={() => setAiSuggestionsHeight(aiSuggestionsHeight === "auto" ? "100px" : "auto")}
+                className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+              >
+                {aiSuggestionsHeight === "auto" ? "Collapse" : "Expand"}
+              </button>
+              <button
+                onClick={() => setShowAiSuggestions(false)}
+                className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
           <div className="space-y-2">
             {aiSuggestions.map((suggestion, index) => (
@@ -531,6 +618,8 @@ AI generated summary based on selected messages.`
           </button>
         </div>
       </div>
+
+      <SummaryModal isOpen={showSummaryModal} onClose={() => setShowSummaryModal(false)} summary={summaryContent} />
     </div>
   )
 }

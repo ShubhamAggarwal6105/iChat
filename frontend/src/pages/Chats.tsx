@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useEffect, useCallback, useMemo } from "react"
-import { Search, Filter, MessageSquare, Bot, Calendar, Shield, Plus } from "lucide-react"
+import { Search, Filter, MessageSquare, Bot, Plus } from "lucide-react"
 import type { User, Chat, Message } from "../types"
 import ChatList from "../components/ChatList"
 import ChatWindow from "../components/ChatWindow"
@@ -94,17 +94,17 @@ const Chats: React.FC<ChatsProps> = ({ user }) => {
                 className="flex items-center space-x-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm"
               >
                 <Filter className="w-4 h-4" />
-                <span>Smart Filter</span>
+                <span>Smart Highlighting</span>
               </button>
 
-              <button
+              {/* <button
                 onClick={() => setShowSummarizeModal(true)}
                 disabled={markedMessages.length === 0}
                 className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Bot className="w-4 h-4" />
                 <span>Summarize</span>
-              </button>
+              </button> */}
             </div>
           </div>
         </div>

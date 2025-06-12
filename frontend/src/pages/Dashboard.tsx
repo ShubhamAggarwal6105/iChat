@@ -2,9 +2,21 @@
 
 import type React from "react"
 import { useState, useEffect } from "react"
-import { Calendar, MessageSquare, TrendingUp, Shield, Users, ChevronLeft, ChevronRight, X, Clock } from "lucide-react"
+import {
+  Calendar,
+  MessageSquare,
+  TrendingUp,
+  Users,
+  ChevronLeft,
+  ChevronRight,
+  X,
+  Clock,
+  Star,
+  AlertTriangle,
+} from "lucide-react"
 import type { User, Message, EventDetails } from "../types"
 import MessageSummary from "../components/MessageSummary"
+import { useToast } from "../hooks/useToast"
 
 interface DashboardProps {
   user: User | null
@@ -25,12 +37,16 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [selectedEvent, setSelectedEvent] = useState<EventDetails | null>(null)
   const [showEventModal, setShowEventModal] = useState(false)
 
-  // Mock events for calendar highlighting
-  const calendarEvents = [
-    { date: new Date(), event: upcomingEvents[0] },
-    { date: new Date(Date.now() + 24 * 60 * 60 * 1000), event: upcomingEvents[1] },
-    { date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), event: upcomingEvents[2] },
-  ]
+  // Add a new state to track removed events
+  const [removedEvents, setRemovedEvents] = useState<string[]>([])
+
+  const { addToast } = useToast()
+
+  // Mock events for calendar highlighting - now using AI-detected events
+  const calendarEvents = upcomingEvents.map((event, index) => ({
+    date: event.date,
+    event: event,
+  }))
 
   const getEventForDate = (day: number) => {
     const dateToCheck = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
@@ -42,8 +58,17 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     )
   }
 
+  // Update the handleDateClick function
   const handleDateClick = (day: number) => {
-    const eventForDate = getEventForDate(day)
+    const dateToCheck = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
+    const eventForDate = calendarEvents.find(
+      (event) =>
+        event.date.getDate() === day &&
+        event.date.getMonth() === currentDate.getMonth() &&
+        event.date.getFullYear() === currentDate.getFullYear() &&
+        !removedEvents.includes(event.event.title),
+    )
+
     if (eventForDate) {
       setSelectedEvent(eventForDate.event)
       setShowEventModal(true)
@@ -51,7 +76,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   }
 
   useEffect(() => {
-    // Simulate loading dashboard data
+    // Simulate loading dashboard data with AI-enhanced content
     setStats({
       totalChats: 12,
       totalMessages: 1247,
@@ -59,62 +84,89 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
       upcomingEvents: 5,
     })
 
-    // Mock recent activity
+    // Mock recent activity with AI-detected properties
     setRecentActivity([
       {
         id: "1",
         chatId: "chat1",
         senderId: "user1",
         senderName: "Alice Johnson",
-        content: "Community meeting scheduled for tomorrow at 7 PM in the main hall",
+        content:
+          "URGENT: Community meeting scheduled for tomorrow at 7 PM in the main hall. All residents must attend.",
         timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
         isImportant: true,
         hasEvent: true,
+        eventDetails: {
+          title: "Community Meeting",
+          date: new Date(Date.now() + 24 * 60 * 60 * 1000),
+          time: "7:00 PM",
+          description: "Monthly community meeting to discuss upcoming projects",
+          type: "meeting",
+        },
       },
       {
         id: "2",
         chatId: "chat2",
         senderId: "user2",
         senderName: "Bob Smith",
-        content: "Maintenance work will be done on the elevator this weekend",
+        content: "Maintenance work will be done on the elevator this weekend from 9 AM to 5 PM",
         timestamp: new Date(Date.now() - 4 * 60 * 60 * 1000),
         isImportant: true,
+        hasEvent: true,
+        eventDetails: {
+          title: "Elevator Maintenance",
+          date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
+          time: "9:00 AM - 5:00 PM",
+          description: "Scheduled maintenance work on building elevator",
+          type: "maintenance",
+        },
       },
       {
         id: "3",
         chatId: "chat3",
         senderId: "user3",
         senderName: "Carol Davis",
-        content: "Weekend barbecue event planning discussion",
+        content: "Weekend barbecue event planning discussion for next Saturday at 4 PM",
         timestamp: new Date(Date.now() - 6 * 60 * 60 * 1000),
         hasEvent: true,
+        isImportant: false,
+        eventDetails: {
+          title: "Weekend Barbecue",
+          date: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000),
+          time: "4:00 PM",
+          description: "Community barbecue event in the garden area",
+          type: "event",
+        },
+      },
+      {
+        id: "4",
+        chatId: "chat4",
+        senderId: "user4",
+        senderName: "David Wilson",
+        content:
+          "Breaking: The government is secretly controlling our minds through 5G towers. Share this before they delete it!",
+        timestamp: new Date(Date.now() - 8 * 60 * 60 * 1000),
+        isImportant: false,
+        isFakeNews: true,
+      },
+      {
+        id: "5",
+        chatId: "chat5",
+        senderId: "user5",
+        senderName: "Emma Brown",
+        content: "New parking regulations effective next month - all residents need to register their vehicles",
+        timestamp: new Date(Date.now() - 10 * 60 * 60 * 1000),
+        isImportant: true,
       },
     ])
 
-    // Mock upcoming events
-    setUpcomingEvents([
-      {
-        title: "Community Meeting",
-        date: new Date(),
-        time: "6:00 PM",
-        description: "Building A, Conference Room",
-        type: "meeting",
-      },
-      {
-        title: "Maintenance Notice",
-        date: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        time: "9:00 AM - 12:00 PM",
-        description: "All Buildings",
-        type: "task",
-      },
-      {
-        title: "Weekend Barbecue",
-        date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000),
-        time: "4:00 PM",
-        description: "Community Garden",
-        type: "event",
-      },
-    ])
+    // Extract upcoming events from messages with events
+    const eventsFromMessages = recentActivity
+      .filter((msg) => msg.hasEvent && msg.eventDetails)
+      .map((msg) => msg.eventDetails!)
+      .filter((event) => event.date > new Date()) // Only future events
+
+    setUpcomingEvents(eventsFromMessages)
   }, [])
 
   const getDaysInMonth = (date: Date) => {
@@ -137,6 +189,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
     })
   }
 
+  // Update the renderCalendar function to check for removed events
   const renderCalendar = () => {
     const daysInMonth = getDaysInMonth(currentDate)
     const firstDay = getFirstDayOfMonth(currentDate)
@@ -155,7 +208,13 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         today.getMonth() === currentDate.getMonth() &&
         today.getFullYear() === currentDate.getFullYear()
 
-      const hasEvent = getEventForDate(day)
+      const eventForDate = calendarEvents.find(
+        (event) =>
+          event.date.getDate() === day &&
+          event.date.getMonth() === currentDate.getMonth() &&
+          event.date.getFullYear() === currentDate.getFullYear() &&
+          !removedEvents.includes(event.event.title),
+      )
 
       days.push(
         <div
@@ -164,18 +223,31 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           className={`h-8 flex items-center justify-center text-sm cursor-pointer rounded-lg transition-all ${
             isToday
               ? "bg-indigo-600 text-white"
-              : hasEvent
+              : eventForDate
                 ? "bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50"
                 : "text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
-          } ${hasEvent ? "font-semibold" : ""}`}
+          } ${eventForDate ? "font-semibold" : ""}`}
         >
           {day}
-          {hasEvent && <div className="absolute w-1 h-1 bg-purple-600 dark:bg-purple-400 rounded-full mt-6"></div>}
+          {eventForDate && <div className="absolute w-1 h-1 bg-purple-600 dark:bg-purple-400 rounded-full mt-6"></div>}
         </div>,
       )
     }
 
     return days
+  }
+
+  // Add a function to remove events from calendar
+  const removeFromCalendar = (event: EventDetails) => {
+    if (event && event.title) {
+      setRemovedEvents([...removedEvents, event.title])
+      setShowEventModal(false)
+      addToast({
+        type: "success",
+        title: "Event Removed",
+        message: `"${event.title}" has been removed from your calendar`,
+      })
+    }
   }
 
   return (
@@ -216,7 +288,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
           <div className="bg-white dark:bg-gray-800 rounded-xl p-6 shadow-sm border border-gray-200 dark:border-gray-700">
             <div className="flex items-center">
               <div className="p-3 bg-yellow-100 dark:bg-yellow-900/30 rounded-lg">
-                <Shield className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
+                <Star className="w-6 h-6 text-yellow-600 dark:text-yellow-400" />
               </div>
               <div className="ml-4">
                 <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Important Messages</p>
@@ -275,22 +347,47 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                     {recentActivity.map((message) => (
                       <div
                         key={message.id}
-                        className="flex items-start space-x-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg"
+                        className={`flex items-start space-x-4 p-4 rounded-lg ${
+                          message.isFakeNews
+                            ? "bg-red-50 dark:bg-red-900/10 border border-red-200 dark:border-red-800"
+                            : message.isImportant
+                              ? "bg-yellow-50 dark:bg-yellow-900/10 border border-yellow-200 dark:border-yellow-800"
+                              : "bg-gray-50 dark:bg-gray-700/50"
+                        }`}
                       >
-                        <div className="w-10 h-10 bg-indigo-100 dark:bg-indigo-900/30 rounded-full flex items-center justify-center">
-                          <Users className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                        <div
+                          className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                            message.isFakeNews
+                              ? "bg-red-100 dark:bg-red-900/30"
+                              : message.isImportant
+                                ? "bg-yellow-100 dark:bg-yellow-900/30"
+                                : "bg-indigo-100 dark:bg-indigo-900/30"
+                          }`}
+                        >
+                          {message.isFakeNews ? (
+                            <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                          ) : message.isImportant ? (
+                            <Star className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+                          ) : (
+                            <Users className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                          )}
                         </div>
                         <div className="flex-1">
                           <div className="flex items-center space-x-2">
                             <p className="font-medium text-gray-900 dark:text-white">{message.senderName}</p>
                             {message.isImportant && (
-                              <span className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 text-xs rounded-full">
+                              <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400 text-xs rounded-full">
                                 Important
                               </span>
                             )}
                             {message.hasEvent && (
                               <span className="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-400 text-xs rounded-full">
                                 Event
+                              </span>
+                            )}
+                            {message.isFakeNews && (
+                              <span className="px-2 py-1 bg-red-100 dark:bg-red-900/30 text-red-800 dark:text-red-400 text-xs rounded-full">
+                                Potential Misinformation
                               </span>
                             )}
                           </div>
@@ -310,6 +407,52 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
             <div>
               <MessageSummary />
             </div>
+
+            <div>
+              <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 mt-8">
+                <div className="p-6 border-b border-gray-200 dark:border-gray-700">
+                  <div className="flex items-center space-x-2">
+                    <Star className="w-5 h-5 text-yellow-500" />
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Important Messages</h2>
+                  </div>
+                </div>
+                <div className="p-6">
+                  <div className="space-y-4">
+                    {recentActivity
+                      .filter((msg) => msg.isImportant)
+                      .slice(0, 3)
+                      .map((message) => (
+                        <div
+                          key={message.id}
+                          className="flex items-start space-x-4 p-4 bg-yellow-50 dark:bg-yellow-900/10 rounded-lg border border-yellow-100 dark:border-yellow-900/20"
+                        >
+                          <div className="w-10 h-10 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center">
+                            <Star className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+                          </div>
+                          <div className="flex-1">
+                            <div className="flex items-center space-x-2">
+                              <p className="font-medium text-gray-900 dark:text-white">{message.senderName}</p>
+                              <span className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-400 text-xs rounded-full">
+                                Important
+                              </span>
+                            </div>
+                            <p className="text-gray-600 dark:text-gray-300 mt-1">{message.content}</p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+                              {message.timestamp.toLocaleTimeString()}
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    {recentActivity.filter((msg) => msg.isImportant).length === 0 && (
+                      <div className="text-center py-8">
+                        <Star className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                        <p className="text-gray-500">No important messages found</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
@@ -324,10 +467,26 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                   <div className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400 mb-2">
                     <Calendar className="w-4 h-4" />
                     <span>
-                      {event.date.toDateString() === new Date().toDateString() ? "Today" : "Tomorrow"}, {event.time}
+                      {event.date.toDateString() === new Date().toDateString()
+                        ? "Today"
+                        : event.date.toLocaleDateString()}
+                      , {event.time}
                     </span>
                   </div>
                   <p className="text-gray-700 dark:text-gray-300">{event.description}</p>
+                  <div className="mt-2">
+                    <span
+                      className={`px-2 py-1 rounded-full text-xs font-medium capitalize ${
+                        event.type === "meeting"
+                          ? "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300"
+                          : event.type === "maintenance"
+                            ? "bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300"
+                            : "bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300"
+                      }`}
+                    >
+                      {event.type}
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -337,7 +496,7 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
               <div className="p-6">
                 <div className="flex items-center justify-between mb-6">
                   <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Calendar</h2>
-                  <p className="text-gray-600 dark:text-gray-400">View and manage your schedule</p>
+                  <p className="text-gray-600 dark:text-gray-400">AI-detected events</p>
                 </div>
 
                 <div className="flex items-center justify-between mb-4">
@@ -412,8 +571,8 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                     className={`px-3 py-1 rounded-full text-sm font-medium capitalize ${
                       selectedEvent.type === "meeting"
                         ? "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300"
-                        : selectedEvent.type === "task"
-                          ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300"
+                        : selectedEvent.type === "maintenance"
+                          ? "bg-orange-100 dark:bg-orange-900/30 text-orange-800 dark:text-orange-300"
                           : "bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300"
                     }`}
                   >
@@ -429,7 +588,10 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 >
                   Close
                 </button>
-                <button className="flex-1 px-4 py-2 bg-red-600 dark:bg-red-700 text-white rounded-lg hover:bg-red-700 dark:hover:bg-red-800 transition-colors">
+                <button
+                  onClick={() => selectedEvent && removeFromCalendar(selectedEvent)}
+                  className="flex-1 px-4 py-2 bg-red-600 dark:bg-red-700 text-white rounded-lg hover:bg-red-700 dark:hover:bg-red-800 transition-colors"
+                >
                   Remove from Calendar
                 </button>
               </div>

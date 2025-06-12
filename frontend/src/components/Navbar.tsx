@@ -1,12 +1,13 @@
 "use client"
 
 import type React from "react"
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Link, useLocation } from "react-router-dom"
-import { MessageCircle, User, LogOut, ChevronDown, Sun, Moon } from "lucide-react"
+import { MessageCircle, User, LogOut, ChevronDown, ChevronUp, Sun, Moon } from "lucide-react"
 import type { User as UserType } from "../types"
 import { useTheme } from "../contexts/ThemeContext"
 import LoginModal from "./LoginModal"
+import { useToast } from "../hooks/useToast"
 
 interface NavbarProps {
   isLoggedIn: boolean
@@ -20,9 +21,44 @@ const Navbar: React.FC<NavbarProps> = ({ isLoggedIn, user, onLogin, onLogout }) 
   const [showLoginModal, setShowLoginModal] = useState(false)
   const location = useLocation()
   const { theme, toggleTheme } = useTheme()
+  const { addToast } = useToast()
+  const dropdownRef = useRef<HTMLDivElement>(null)
 
   const isActivePage = (path: string) => {
     return location.pathname === path
+  }
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
+        setIsProfileDropdownOpen(false)
+      }
+    }
+
+    document.addEventListener("mousedown", handleClickOutside)
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside)
+    }
+  }, [])
+
+  const handleLogin = (userData: UserType) => {
+    onLogin(userData)
+    addToast({
+      type: "success",
+      title: "Login Successful",
+      message: `Welcome back, ${userData.name}!`,
+    })
+  }
+
+  const handleLogout = () => {
+    onLogout()
+    setIsProfileDropdownOpen(false)
+    addToast({
+      type: "info",
+      title: "Logged Out",
+      message: "You have been successfully logged out.",
+    })
   }
 
   return (
@@ -100,7 +136,7 @@ const Navbar: React.FC<NavbarProps> = ({ isLoggedIn, user, onLogin, onLogout }) 
                   Login
                 </button>
               ) : (
-                <div className="relative">
+                <div className="relative" ref={dropdownRef}>
                   <button
                     onClick={() => setIsProfileDropdownOpen(!isProfileDropdownOpen)}
                     className="flex items-center space-x-2 text-gray-700 dark:text-gray-300 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
@@ -117,7 +153,7 @@ const Navbar: React.FC<NavbarProps> = ({ isLoggedIn, user, onLogin, onLogout }) 
                       )}
                     </div>
                     <span className="font-medium">{user?.name || "User"}</span>
-                    <ChevronDown className="w-4 h-4" />
+                    {isProfileDropdownOpen ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
                   </button>
 
                   {isProfileDropdownOpen && (
@@ -127,7 +163,7 @@ const Navbar: React.FC<NavbarProps> = ({ isLoggedIn, user, onLogin, onLogout }) 
                         <p className="text-sm text-gray-500 dark:text-gray-400">@{user?.username}</p>
                       </div>
                       <button
-                        onClick={onLogout}
+                        onClick={handleLogout}
                         className="w-full text-left px-4 py-2 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center space-x-2"
                       >
                         <LogOut className="w-4 h-4" />
@@ -142,7 +178,7 @@ const Navbar: React.FC<NavbarProps> = ({ isLoggedIn, user, onLogin, onLogout }) 
         </div>
       </nav>
 
-      <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={onLogin} />
+      <LoginModal isOpen={showLoginModal} onClose={() => setShowLoginModal(false)} onLogin={handleLogin} />
     </>
   )
 }

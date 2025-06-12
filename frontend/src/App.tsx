@@ -8,12 +8,15 @@ import Footer from "./components/Footer"
 import LandingPage from "./pages/LandingPage"
 import Dashboard from "./pages/Dashboard"
 import Chats from "./pages/Chats"
+import ToastContainer from "./components/ToastContainer"
 import type { User } from "./types"
 import { apiService } from "./services/api"
+import { useToast } from "./hooks/useToast"
 
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false)
   const [user, setUser] = useState<User | null>(null)
+  const { toasts, removeToast } = useToast()
 
   useEffect(() => {
     const checkAuth = async () => {
@@ -60,6 +63,7 @@ function App() {
             </Routes>
           </main>
           <Footer />
+          <ToastContainer toasts={toasts} onClose={removeToast} />
         </div>
       </Router>
     </ThemeProvider>
