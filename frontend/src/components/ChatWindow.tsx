@@ -3,7 +3,9 @@
 import type React from "react"
 import { useState, useEffect } from "react"
 import { Send, Bot, Copy, Shield, Calendar, Star, MoreVertical, Phone, Video } from "lucide-react"
-import type { Chat, Message, User } from "../types"
+import type { Chat, Message, User } from "../types";
+import { GoogleGenerativeAI } from '@google/generative-ai';
+const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY || '');
 
 interface ChatWindowProps {
   chat: Chat
@@ -85,18 +87,54 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chat, messages: initialMessages
     setNewMessage("")
     setShowAiSuggestions(false)
   }
+  const generateAiSuggestions = async (selectedMessage: Message) => {
+    try {
+      // Get the model
+      const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+
+      // Format chat history for context
+      const chatHistory = messages
+        .map(msg => `${msg.senderName}: ${msg.content}`)
+        .join('\n');
+
+      // Create the prompt
+      const prompt = `Given the following chat history and the selected message, suggest 3 appropriate responses. Each response should be a complete sentence and start on a new line. Do not include numbers, bullet points, or any other formatting.
+
+Chat History:
+${chatHistory}
+
+Selected Message:
+${selectedMessage.senderName}: ${selectedMessage.content}
+
+Provide exactly 3 responses, one per line:`;
+
+      // Generate content
+      const result = await model.generateContent(prompt);
+      const response = await result.response;
+      const suggestions = response.text()
+      .split('\n')
+      .map(s => s.replace(/^\d+\.\s*|\*\*|^[-•]\s*/g, '').trim())
+      .filter(s => s.length > 0 && s.endsWith('.'));
+
+      // Take first 3 suggestions
+      setAiSuggestions(suggestions.slice(0, 3));
+      setShowAiSuggestions(true);
+    } catch (error) {
+      console.error('Error generating AI suggestions:', error);
+      // Fallback to default suggestions if API call fails
+      // setAiSuggestions([
+      //   "Thank you for the update!",
+      //   "I'll be there on time.",
+      //   "Could you provide more details about this?"
+      // ]);
+      // setShowAiSuggestions(true);
+    }
+  };
 
   const handleMessageClick = (message: Message) => {
     setSelectedMessage(message)
     // Generate AI suggestions for reply
-    const suggestions = [
-      "Thank you for the update!",
-      "I'll be there on time.",
-      "Could you provide more details about this?",
-      "This is very helpful information.",
-    ]
-    setAiSuggestions(suggestions)
-    setShowAiSuggestions(true)
+    generateAiSuggestions(message);
   }
 
   const handleCopySuggestion = (suggestion: string) => {
