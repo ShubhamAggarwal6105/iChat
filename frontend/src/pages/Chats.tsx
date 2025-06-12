@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback, useMemo } from "react"
 import { Search, Filter, MessageSquare, Bot, Calendar, Shield, Plus } from "lucide-react"
 import type { User, Chat, Message } from "../types"
 import ChatList from "../components/ChatList"
@@ -21,50 +21,58 @@ const Chats: React.FC<ChatsProps> = ({ user }) => {
   const [searchTerm, setSearchTerm] = useState("")
   const [showFilterModal, setShowFilterModal] = useState(false)
   const [showSummarizeModal, setShowSummarizeModal] = useState(false)
-  const [isLoadingChats, setIsLoadingChats] = useState(true)
+  const [markedMessages, setMarkedMessages] = useState<string[]>([])
+  const [isLoadingChats, setIsLoadingChats] = useState(false)
 
-  useEffect(() => {
-    const fetchGroups = async () => {
-      setIsLoadingChats(true)
-      try {
-        const result = await apiService.getGroups()
-        if (result.success && result.data) {
-          // Convert Telegram groups to Chat format
-          const convertedChats: Chat[] = result.data.groups.map((group: TelegramGroup) => ({
-            id: group.id,
-            name: group.name,
-            type: group.type,
-            avatar: group.avatar,
-            unreadCount: group.unreadCount,
-            members: group.members,
-            lastMessage: group.lastMessage
-              ? {
-                  ...group.lastMessage,
-                  timestamp: new Date(group.lastMessage.timestamp),
-                }
-              : undefined,
-          }))
-          setChats(convertedChats)
-        } else {
-          console.error("Failed to fetch groups:", result.error)
-        }
-      } catch (error) {
-        console.error("Error fetching groups:", error)
-      } finally {
-        setIsLoadingChats(false)
+  const fetchGroups = useCallback(async () => {
+    if (!user || isLoadingChats) return
+
+    setIsLoadingChats(true)
+    try {
+      console.log("Fetching groups...")
+      const result = await apiService.getGroups()
+      if (result.success && result.data) {
+        // Convert Telegram groups to Chat format
+        const convertedChats: Chat[] = result.data.groups.map((group: TelegramGroup) => ({
+          id: group.id,
+          name: group.name,
+          type: group.type,
+          avatar: group.avatar,
+          unreadCount: group.unreadCount,
+          members: group.members,
+          lastMessage: group.lastMessage
+            ? {
+                ...group.lastMessage,
+                timestamp: new Date(group.lastMessage.timestamp),
+              }
+            : undefined,
+        }))
+        setChats(convertedChats)
+        console.log(`Loaded ${convertedChats.length} chats`)
+      } else {
+        console.error("Failed to fetch groups:", result.error)
       }
+    } catch (error) {
+      console.error("Error fetching groups:", error)
+    } finally {
+      setIsLoadingChats(false)
     }
+  }, [user, isLoadingChats])
 
-    if (user) {
+  // Only fetch groups once when user is available
+  useEffect(() => {
+    if (user && chats.length === 0) {
       fetchGroups()
     }
-  }, [user])
+  }, [user, chats.length, fetchGroups])
 
-  const handleMessagesUpdate = (updatedMessages: Message[]) => {
+  const handleMessagesUpdate = useCallback((updatedMessages: Message[]) => {
     setMessages(updatedMessages)
-  }
+  }, [])
 
-  const filteredChats = chats.filter((chat) => chat.name.toLowerCase().includes(searchTerm.toLowerCase()))
+  const filteredChats = useMemo(() => {
+    return chats.filter((chat) => chat.name.toLowerCase().includes(searchTerm.toLowerCase()))
+  }, [chats, searchTerm])
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 transition-colors">
@@ -91,30 +99,21 @@ const Chats: React.FC<ChatsProps> = ({ user }) => {
 
               <button
                 onClick={() => setShowSummarizeModal(true)}
-                className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm"
+                disabled={markedMessages.length === 0}
+                className="flex items-center space-x-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Bot className="w-4 h-4" />
                 <span>Summarize</span>
-              </button>
-
-              <button className="flex items-center space-x-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm">
-                <Calendar className="w-4 h-4" />
-                <span>Auto Schedule</span>
-              </button>
-
-              <button className="flex items-center space-x-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors shadow-sm">
-                <Shield className="w-4 h-4" />
-                <span>Fact Check</span>
               </button>
             </div>
           </div>
         </div>
 
         {/* Main Chat Interface */}
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[calc(100vh-200px)]">
+        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           {/* Chat List */}
           <div className="lg:col-span-1">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 h-full flex flex-col overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 h-[600px] flex flex-col overflow-hidden">
               {/* Chat List Header */}
               <div className="p-6 border-b border-gray-200 dark:border-gray-700">
                 <div className="flex items-center justify-between mb-4">
@@ -139,38 +138,16 @@ const Chats: React.FC<ChatsProps> = ({ user }) => {
 
               {/* Chat List */}
               <div className="flex-1 overflow-y-auto">
-                {isLoadingChats ? (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-                    <span className="ml-3 text-gray-600 dark:text-gray-400">Loading chats...</span>
-                  </div>
-                ) : filteredChats.length === 0 ? (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center p-6">
-                      <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-4" />
-                      <p className="text-gray-500 dark:text-gray-400">No chats found</p>
-                      <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
-                        {searchTerm ? "Try a different search term" : "Join some groups to get started"}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  <ChatList chats={filteredChats} selectedChat={selectedChat} onSelectChat={setSelectedChat} />
-                )}
+                <ChatList chats={filteredChats} selectedChat={selectedChat} onSelectChat={setSelectedChat} />
               </div>
             </div>
           </div>
 
           {/* Chat Window */}
           <div className="lg:col-span-3">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 h-full overflow-hidden">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 h-[600px] overflow-hidden">
               {selectedChat ? (
-                <ChatWindow
-                  chat={selectedChat}
-                  messages={messages}
-                  user={user}
-                  onMessagesUpdate={handleMessagesUpdate}
-                />
+                <ChatWindow chat={selectedChat} messages={messages} user={user} />
               ) : (
                 <div className="h-full flex items-center justify-center">
                   <div className="text-center">
