@@ -1,6 +1,7 @@
 import asyncio
 import json
 import threading
+import re
 from datetime import datetime, timedelta
 from telethon import TelegramClient
 from telethon.tl.types import User, Chat, Channel
@@ -8,6 +9,7 @@ from django.conf import settings
 import os
 from concurrent.futures import ThreadPoolExecutor
 import queue
+import google.generativeai as genai
 
 class TelegramService:
     def __init__(self):
@@ -18,6 +20,12 @@ class TelegramService:
         self.phone_number = None
         self._loop = None
         self._thread = None
+        
+        # Initialize Gemini AI
+        self.gemini_api_key = getattr(settings, 'GEMINI_API_KEY', 'AIzaSyBpknWU2WaUKEYY1oh4QRXAkoKnvP-8loE')
+        genai.configure(api_key=self.gemini_api_key)
+        self.model = genai.GenerativeModel('gemini-2.0-flash')
+        
         self._start_background_loop()
 
     def _start_background_loop(self):
@@ -230,10 +238,6 @@ class TelegramService:
                     except:
                         pass
 
-                    # Basic AI analysis
-                    is_important = self._analyze_importance(msg.text)
-                    has_event, event_details = self._extract_event_info(msg.text)
-                    
                     message_data = {
                         'id': str(msg.id),
                         'chatId': str(group_id),
@@ -241,17 +245,26 @@ class TelegramService:
                         'senderName': sender_name,
                         'content': msg.text,
                         'timestamp': msg.date.isoformat() if msg.date else datetime.now().isoformat(),
-                        'isImportant': is_important,
-                        'hasEvent': has_event,
-                        'eventDetails': event_details,
-                        'isFakeNews': False
+                        'isImportant': False,  # Will be set by AI analysis
+                        'hasEvent': False,     # Will be set by AI analysis
+                        'eventDetails': None,  # Will be set by AI analysis
+                        'isFakeNews': False    # Will be set by AI analysis
                     }
                     formatted_messages.append(message_data)
 
-                return {
-                    'success': True,
-                    'messages': formatted_messages
-                }
+                # Perform AI analysis on all messages at once
+                if formatted_messages:
+                    analyzed_messages = self._analyze_messages_with_ai(formatted_messages)
+                    return {
+                        'success': True,
+                        'messages': analyzed_messages
+                    }
+                else:
+                    return {
+                        'success': True,
+                        'messages': []
+                    }
+
             except Exception as e:
                 return {
                     'success': False,
@@ -260,33 +273,137 @@ class TelegramService:
         
         return self._run_async(_get_messages())
 
-    def _analyze_importance(self, text):
-        """Basic importance analysis"""
-        important_keywords = [
-            'urgent', 'important', 'emergency', 'meeting', 'deadline',
-            'maintenance', 'announcement', 'notice', 'alert', 'breaking'
-        ]
-        text_lower = text.lower()
-        return any(keyword in text_lower for keyword in important_keywords)
+    def _analyze_messages_with_ai(self, messages):
+        """Analyze messages using Gemini AI for importance, events, and fake news detection"""
+        try:
+            # Prepare messages for AI analysis
+            messages_for_analysis = []
+            for i, msg in enumerate(messages):
+                messages_for_analysis.append({
+                    'index': i,
+                    'sender': msg['senderName'],
+                    'content': msg['content'],
+                    'timestamp': msg['timestamp']
+                })
 
-    def _extract_event_info(self, text):
-        """Basic event extraction"""
-        event_keywords = ['meeting', 'event', 'schedule', 'appointment', 'call']
-        text_lower = text.lower()
-        
-        has_event = any(keyword in text_lower for keyword in event_keywords)
-        
-        if has_event:
-            event_details = {
-                'title': 'Extracted Event',
-                'date': (datetime.now() + timedelta(days=1)).isoformat(),
-                'time': '7:00 PM',
-                'description': text[:100] + '...' if len(text) > 100 else text,
-                'type': 'meeting'
-            }
-            return True, event_details
-        
-        return False, None
+            # Create the prompt for Gemini
+            prompt = self._create_analysis_prompt(messages_for_analysis)
+            
+            # Get AI response
+            response = self.model.generate_content(prompt)
+            ai_analysis = self._parse_ai_response(response.text)
+            
+            # Apply AI analysis to messages
+            for analysis in ai_analysis:
+                if 'index' in analysis and analysis['index'] < len(messages):
+                    msg_index = analysis['index']
+                    messages[msg_index]['isImportant'] = analysis.get('isImportant', False)
+                    messages[msg_index]['isFakeNews'] = analysis.get('isFakeNews', False)
+                    messages[msg_index]['hasEvent'] = analysis.get('hasEvent', False)
+                    
+                    if analysis.get('hasEvent') and 'eventDetails' in analysis:
+                        messages[msg_index]['eventDetails'] = analysis['eventDetails']
+
+            return messages
+
+        except Exception as e:
+            print(f"AI analysis error: {e}")
+            # Return messages with default values if AI analysis fails
+            return messages
+
+    def _create_analysis_prompt(self, messages):
+        """Create a comprehensive prompt for AI analysis"""
+        messages_text = ""
+        for msg in messages:
+            messages_text += f"Index {msg['index']}: [{msg['sender']}] {msg['content']}\n"
+
+        prompt = f"""
+Analyze the following messages from a Telegram group chat and classify each message. Return your analysis in JSON format.
+
+Messages:
+{messages_text}
+
+For each message, determine:
+1. isImportant: true if the message contains urgent information, announcements, deadlines, emergencies, maintenance notices, important updates, or anything requiring immediate attention
+2. isFakeNews: true if the message contains misinformation, unverified claims, conspiracy theories, or suspicious content
+3. hasEvent: true if the message mentions a specific event, meeting, appointment, deadline, or scheduled activity
+4. eventDetails: if hasEvent is true, extract:
+   - title: Brief title for the event
+   - date: Event date (if mentioned, otherwise estimate based on context like "tomorrow", "next week", etc.)
+   - time: Event time (if mentioned, otherwise estimate reasonable time)
+   - description: Brief description of the event
+   - type: one of "meeting", "call", "task", "event", "deadline", "maintenance"
+
+Return ONLY a JSON array with this exact structure:
+[
+  {{
+    "index": 0,
+    "isImportant": boolean,
+    "isFakeNews": boolean,
+    "hasEvent": boolean,
+    "eventDetails": {{
+      "title": "string",
+      "date": "YYYY-MM-DDTHH:mm:ss.sssZ",
+      "time": "HH:MM AM/PM",
+      "description": "string",
+      "type": "meeting|call|task|event|deadline|maintenance"
+    }} // only include if hasEvent is true
+  }}
+]
+
+Important guidelines:
+- Be conservative with isImportant - only mark truly urgent/important messages
+- Be very careful with isFakeNews - only mark obvious misinformation
+- For dates, if relative time is mentioned (tomorrow, next week), calculate actual date
+- If no specific time is mentioned for events, use reasonable defaults (meetings: 2:00 PM, maintenance: 9:00 AM, etc.)
+- Ensure all JSON is properly formatted and valid
+"""
+        return prompt
+
+    def _parse_ai_response(self, response_text):
+        """Parse AI response and extract analysis data"""
+        try:
+            # Clean the response text
+            response_text = response_text.strip()
+            
+            # Remove markdown code blocks if present
+            if response_text.startswith('```json'):
+                response_text = response_text[7:]
+            if response_text.startswith('```'):
+                response_text = response_text[3:]
+            if response_text.endswith('```'):
+                response_text = response_text[:-3]
+            
+            response_text = response_text.strip()
+            
+            # Parse JSON
+            analysis_data = json.loads(response_text)
+            
+            # Process dates in eventDetails
+            for item in analysis_data:
+                if item.get('hasEvent') and 'eventDetails' in item:
+                    event_details = item['eventDetails']
+                    
+                    # If date is relative, convert to actual date
+                    if 'date' in event_details:
+                        date_str = event_details['date']
+                        if 'tomorrow' in date_str.lower():
+                            event_details['date'] = (datetime.now() + timedelta(days=1)).isoformat()
+                        elif 'today' in date_str.lower():
+                            event_details['date'] = datetime.now().isoformat()
+                        elif 'next week' in date_str.lower():
+                            event_details['date'] = (datetime.now() + timedelta(days=7)).isoformat()
+                        # If it's already in ISO format, keep it as is
+            
+            return analysis_data
+            
+        except json.JSONDecodeError as e:
+            print(f"JSON parsing error: {e}")
+            print(f"Response text: {response_text}")
+            return []
+        except Exception as e:
+            print(f"Error parsing AI response: {e}")
+            return []
 
     def disconnect(self):
         """Disconnect the client"""
