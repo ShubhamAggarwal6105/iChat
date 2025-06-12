@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { useState, useEffect } from "react"
-import { Calendar, MessageSquare, TrendingUp, Shield, Users, ChevronLeft, ChevronRight } from "lucide-react"
+import { Calendar, MessageSquare, TrendingUp, Shield, Users, ChevronLeft, ChevronRight, X, Clock } from "lucide-react"
 import type { User, Message, EventDetails } from "../types"
 import MessageSummary from "../components/MessageSummary"
 
@@ -21,6 +21,34 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
   const [recentActivity, setRecentActivity] = useState<Message[]>([])
   const [upcomingEvents, setUpcomingEvents] = useState<EventDetails[]>([])
   const [currentDate, setCurrentDate] = useState(new Date())
+
+  const [selectedEvent, setSelectedEvent] = useState<EventDetails | null>(null)
+  const [showEventModal, setShowEventModal] = useState(false)
+
+  // Mock events for calendar highlighting
+  const calendarEvents = [
+    { date: new Date(), event: upcomingEvents[0] },
+    { date: new Date(Date.now() + 24 * 60 * 60 * 1000), event: upcomingEvents[1] },
+    { date: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), event: upcomingEvents[2] },
+  ]
+
+  const getEventForDate = (day: number) => {
+    const dateToCheck = new Date(currentDate.getFullYear(), currentDate.getMonth(), day)
+    return calendarEvents.find(
+      (event) =>
+        event.date.getDate() === day &&
+        event.date.getMonth() === currentDate.getMonth() &&
+        event.date.getFullYear() === currentDate.getFullYear(),
+    )
+  }
+
+  const handleDateClick = (day: number) => {
+    const eventForDate = getEventForDate(day)
+    if (eventForDate) {
+      setSelectedEvent(eventForDate.event)
+      setShowEventModal(true)
+    }
+  }
 
   useEffect(() => {
     // Simulate loading dashboard data
@@ -127,14 +155,22 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
         today.getMonth() === currentDate.getMonth() &&
         today.getFullYear() === currentDate.getFullYear()
 
+      const hasEvent = getEventForDate(day)
+
       days.push(
         <div
           key={day}
-          className={`h-8 flex items-center justify-center text-sm cursor-pointer rounded-lg hover:bg-indigo-50 dark:hover:bg-indigo-900/20 ${
-            isToday ? "bg-indigo-600 text-white" : "text-gray-700 dark:text-gray-300"
-          }`}
+          onClick={() => handleDateClick(day)}
+          className={`h-8 flex items-center justify-center text-sm cursor-pointer rounded-lg transition-all ${
+            isToday
+              ? "bg-indigo-600 text-white"
+              : hasEvent
+                ? "bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 hover:bg-purple-200 dark:hover:bg-purple-900/50"
+                : "text-gray-700 dark:text-gray-300 hover:bg-indigo-50 dark:hover:bg-indigo-900/20"
+          } ${hasEvent ? "font-semibold" : ""}`}
         >
           {day}
+          {hasEvent && <div className="absolute w-1 h-1 bg-purple-600 dark:bg-purple-400 rounded-full mt-6"></div>}
         </div>,
       )
     }
@@ -230,9 +266,9 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
 
         {/* Tab Content */}
         {activeTab === "messages" ? (
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 gap-8">
             {/* Recent Activity */}
-            <div className="lg:col-span-2">
+            <div>
               <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700">
                 <div className="p-6">
                   <div className="space-y-4">
@@ -334,6 +370,68 @@ const Dashboard: React.FC<DashboardProps> = ({ user }) => {
                 </div>
 
                 <div className="grid grid-cols-7 gap-1">{renderCalendar()}</div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Event Detail Modal */}
+        {showEventModal && selectedEvent && (
+          <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+            <div className="bg-white dark:bg-gray-900 rounded-2xl p-8 w-full max-w-md shadow-2xl">
+              <div className="flex items-center justify-between mb-6">
+                <h2 className="text-2xl font-bold text-gray-900 dark:text-white">Event Details</h2>
+                <button
+                  onClick={() => setShowEventModal(false)}
+                  className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                >
+                  <X className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">{selectedEvent.title}</h3>
+                  <p className="text-gray-600 dark:text-gray-400">{selectedEvent.description}</p>
+                </div>
+
+                <div className="flex items-center space-x-2 text-gray-600 dark:text-gray-400">
+                  <Calendar className="w-4 h-4" />
+                  <span>{selectedEvent.date.toLocaleDateString()}</span>
+                </div>
+
+                {selectedEvent.time && (
+                  <div className="flex items-center space-x-2 text-gray-600 dark:text-gray-400">
+                    <Clock className="w-4 h-4" />
+                    <span>{selectedEvent.time}</span>
+                  </div>
+                )}
+
+                <div className="pt-4">
+                  <span
+                    className={`px-3 py-1 rounded-full text-sm font-medium capitalize ${
+                      selectedEvent.type === "meeting"
+                        ? "bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300"
+                        : selectedEvent.type === "task"
+                          ? "bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300"
+                          : "bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300"
+                    }`}
+                  >
+                    {selectedEvent.type}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex space-x-3 mt-8">
+                <button
+                  onClick={() => setShowEventModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                >
+                  Close
+                </button>
+                <button className="flex-1 px-4 py-2 bg-red-600 dark:bg-red-700 text-white rounded-lg hover:bg-red-700 dark:hover:bg-red-800 transition-colors">
+                  Remove from Calendar
+                </button>
               </div>
             </div>
           </div>

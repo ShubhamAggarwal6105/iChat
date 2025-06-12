@@ -50,9 +50,9 @@ function App() {
   return (
     <ThemeProvider>
       <Router>
-        <div className="min-h-screen bg-white dark:bg-gray-900 transition-colors">
+        <div className="flex flex-col min-h-screen bg-white dark:bg-gray-900 transition-colors">
           <Navbar isLoggedIn={isLoggedIn} user={user} onLogin={handleLogin} onLogout={handleLogout} />
-          <main>
+          <main className="flex-1">
             <Routes>
               <Route path="/" element={<LandingPage />} />
               <Route path="/dashboard" element={isLoggedIn ? <Dashboard user={user} /> : <Navigate to="/" />} />

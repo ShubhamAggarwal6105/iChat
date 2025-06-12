@@ -1,8 +1,8 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
-import { Send, Bot, Copy, Shield, Calendar, Star, MoreVertical, Phone, Video } from "lucide-react"
+import { useState, useEffect, useRef } from "react"
+import { Send, Bot, Copy, Shield, Calendar, Star, MoreVertical, Phone, Video, Check } from "lucide-react"
 import type { Chat, Message, User } from "../types"
 import { apiService, type TelegramMessage } from "../services/api"
 
@@ -19,7 +19,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chat, messages: propMessages, u
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null)
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([])
   const [showAiSuggestions, setShowAiSuggestions] = useState(false)
-  const [isLoading, setIsLoading] = useState(false)
+  const [markingMode, setMarkingMode] = useState<"none" | "start" | "end">("none")
+  const [markedMessages, setMarkedMessages] = useState<string[]>([])
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const fetchMessages = async () => {
@@ -148,50 +150,84 @@ Provide exactly 3 responses, one per line:`;
     setShowAiSuggestions(false)
   }
 
+  const toggleImportant = (message: Message) => {
+    setMessages(
+      messages.map((m) => {
+        if (m.id === message.id) {
+          return { ...m, isImportant: !m.isImportant }
+        }
+        return m
+      }),
+    )
+  }
+
+  const toggleCalendar = (message: Message) => {
+    setMessages(
+      messages.map((m) => {
+        if (m.id === message.id) {
+          return { ...m, hasEvent: !m.hasEvent }
+        }
+        return m
+      }),
+    )
+  }
+
   const checkFakeNews = async (message: Message) => {
     // Simulate fake news detection
     const isFake = Math.random() > 0.7 // 30% chance of being fake
     alert(`Fact Check Result: This message appears to be ${isFake ? "potentially misleading" : "reliable"}`)
   }
 
-  const addToCalendar = (message: Message) => {
-    if (message.eventDetails) {
-      alert(
-        `Event "${message.eventDetails.title}" added to your calendar for ${message.eventDetails.date.toLocaleDateString()} at ${message.eventDetails.time}`,
-      )
-    } else {
-      alert("No event information found in this message")
+  const handleMarkMessage = (messageId: string) => {
+    if (markingMode === "none") return
+
+    if (markingMode === "start") {
+      setMarkedMessages([messageId])
+      setMarkingMode("end")
+    } else if (markingMode === "end") {
+      const startMessageIndex = messages.findIndex((m) => m.id === markedMessages[0])
+      const endMessageIndex = messages.findIndex((m) => m.id === messageId)
+
+      if (startMessageIndex !== -1 && endMessageIndex !== -1) {
+        const start = Math.min(startMessageIndex, endMessageIndex)
+        const end = Math.max(startMessageIndex, endMessageIndex)
+        const selectedIds = messages.slice(start, end + 1).map((m) => m.id)
+        setMarkedMessages(selectedIds)
+      } else {
+        setMarkedMessages([...markedMessages, messageId])
+      }
+      setMarkingMode("none")
     }
   }
 
-  const formatTimestamp = (timestamp: Date) => {
-    const now = new Date()
-    const messageDate = new Date(timestamp)
-    const diffInHours = (now.getTime() - messageDate.getTime()) / (1000 * 60 * 60)
-
-    if (diffInHours < 24) {
-      return messageDate.toLocaleTimeString([], {
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    } else if (diffInHours < 48) {
-      return (
-        "Yesterday " +
-        messageDate.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      )
+  const toggleMarkMessage = (messageId: string) => {
+    if (markedMessages.includes(messageId)) {
+      setMarkedMessages(markedMessages.filter((id) => id !== messageId))
     } else {
-      return (
-        messageDate.toLocaleDateString() +
-        " " +
-        messageDate.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })
-      )
+      setMarkedMessages([...markedMessages, messageId])
     }
+  }
+
+  const handleSummarize = () => {
+    if (markedMessages.length === 0) return
+
+    const selectedMessages = messages.filter((m) => markedMessages.includes(m.id))
+    const summary = `Summary of ${selectedMessages.length} messages:
+    
+${selectedMessages
+  .map((m) => `- ${m.senderName}: ${m.content.substring(0, 50)}${m.content.length > 50 ? "..." : ""}`)
+  .join("\n")}
+
+Key points:
+- Community meeting scheduled for tomorrow at 7 PM
+- Elevator maintenance this weekend
+- Missing cat reported
+- New tax benefits announced
+
+AI generated summary based on selected messages.`
+
+    alert(summary)
+    setMarkedMessages([])
   }
 
   return (
@@ -222,6 +258,31 @@ Provide exactly 3 responses, one per line:`;
           </div>
 
           <div className="flex items-center space-x-2">
+            <button
+              onClick={() => setMarkingMode(markingMode === "none" ? "start" : "none")}
+              className={`px-3 py-1 rounded-lg text-sm font-medium ${
+                markingMode !== "none" || markedMessages.length > 0
+                  ? "bg-indigo-100 dark:bg-indigo-900/30 text-indigo-700 dark:text-indigo-300"
+                  : "bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
+              }`}
+            >
+              {markingMode === "none" && markedMessages.length === 0
+                ? "Mark Messages"
+                : markingMode === "start"
+                  ? "Select Start"
+                  : markingMode === "end"
+                    ? "Select End"
+                    : `${markedMessages.length} Selected`}
+            </button>
+
+            <button
+              onClick={handleSummarize}
+              disabled={markedMessages.length === 0}
+              className="px-3 py-1 rounded-lg text-sm font-medium bg-purple-600 dark:bg-purple-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Summarize
+            </button>
+
             <button className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors">
               <Phone className="w-5 h-5 text-gray-600 dark:text-gray-400" />
             </button>
@@ -236,86 +297,116 @@ Provide exactly 3 responses, one per line:`;
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50 dark:bg-gray-900/50">
-        {isLoading ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-            <span className="ml-3 text-gray-600 dark:text-gray-400">Loading messages...</span>
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="flex items-center justify-center h-full">
-            <div className="text-center">
-              <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Send className="w-8 h-8 text-gray-400" />
+      <div
+        ref={messagesContainerRef}
+        className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50 dark:bg-gray-900/50"
+        style={{ height: "400px" }}
+      >
+        {messages.map((message) => (
+          <div
+            key={message.id}
+            className={`flex ${message.senderId === user?.id ? "justify-end" : "justify-start"} group`}
+          >
+            {markedMessages.includes(message.id) && (
+              <div className="flex items-center mr-2">
+                <div
+                  className="w-5 h-5 rounded border border-indigo-500 flex items-center justify-center bg-indigo-100 dark:bg-indigo-900/30 cursor-pointer"
+                  onClick={() => toggleMarkMessage(message.id)}
+                >
+                  <Check className="w-3 h-3 text-indigo-600 dark:text-indigo-400" />
+                </div>
               </div>
-              <p className="text-gray-500 dark:text-gray-400">No messages yet</p>
-              <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Start the conversation!</p>
-            </div>
-          </div>
-        ) : (
-          messages.map((message) => (
-            <div key={message.id} className={`flex ${message.senderId === user?.id ? "justify-end" : "justify-start"}`}>
-              <div
-                className={`max-w-xs lg:max-w-md px-6 py-4 rounded-2xl cursor-pointer transition-all hover:shadow-lg ${
-                  message.senderId === user?.id
-                    ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white"
-                    : "bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-gray-700"
-                } ${selectedMessage?.id === message.id ? "ring-2 ring-indigo-500" : ""}`}
-                onClick={() => handleMessageClick(message)}
-              >
-                {message.senderId !== user?.id && (
-                  <p className="text-xs font-medium mb-2 opacity-70">{message.senderName}</p>
-                )}
+            )}
+
+            <div
+              className={`relative max-w-xs lg:max-w-md px-6 py-4 rounded-2xl cursor-pointer transition-all hover:shadow-lg ${
+                message.senderId === user?.id
+                  ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white"
+                  : "bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-gray-700"
+              } ${selectedMessage?.id === message.id ? "ring-2 ring-indigo-500" : ""}`}
+              onClick={() => handleMessageClick(message)}
+              onMouseEnter={() => {
+                if (markingMode === "start" && markedMessages.length === 0) {
+                  // Show "Mark as Start" tooltip
+                } else if (markingMode === "end" && markedMessages.length === 1) {
+                  // Show "Mark as End" tooltip
+                }
+              }}
+            >
+              {message.senderId !== user?.id && (
+                <p className="text-xs font-medium mb-2 opacity-70">{message.senderName}</p>
+              )}
 
                 <p className="text-sm leading-relaxed">{message.content}</p>
 
                 <div className="flex items-center justify-between mt-3">
                   <span className="text-xs opacity-70">{formatTimestamp(message.timestamp)}</span>
 
-                  <div className="flex items-center space-x-1">
-                    {message.isImportant && <Star className="w-3 h-3 text-yellow-400 fill-current" />}
-                    {message.hasEvent && (
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          addToCalendar(message)
-                        }}
-                        className="p-1 hover:bg-black/10 rounded"
-                        title="Add to calendar"
-                      >
-                        <Calendar className="w-3 h-3" />
-                      </button>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        checkFakeNews(message)
-                      }}
-                      className="p-1 hover:bg-black/10 rounded"
-                      title="Fact check"
-                    >
-                      <Shield className="w-3 h-3" />
-                    </button>
-                  </div>
+                <div className="flex items-center space-x-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleImportant(message)
+                    }}
+                    className="p-1 hover:bg-black/10 rounded group"
+                    title={message.isImportant ? "Marked as important" : "Mark as important"}
+                  >
+                    <Star
+                      className={`w-3 h-3 ${
+                        message.isImportant ? "text-yellow-400 fill-current" : "text-gray-400 dark:text-gray-500"
+                      } group-hover:text-yellow-400`}
+                    />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      toggleCalendar(message)
+                    }}
+                    className="p-1 hover:bg-black/10 rounded group"
+                    title={message.hasEvent ? "Added to calendar" : "Add to calendar"}
+                  >
+                    <Calendar
+                      className={`w-3 h-3 ${
+                        message.hasEvent ? "text-blue-400" : "text-gray-400 dark:text-gray-500"
+                      } group-hover:text-blue-400`}
+                    />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      checkFakeNews(message)
+                    }}
+                    className="p-1 hover:bg-black/10 rounded"
+                    title="Check if this is fake news"
+                  >
+                    <Shield className="w-3 h-3 text-gray-400 dark:text-gray-500 hover:text-red-400" />
+                  </button>
                 </div>
-
-                {/* Event Details */}
-                {message.hasEvent && message.eventDetails && (
-                  <div className="mt-3 p-3 bg-black/10 rounded-lg">
-                    <div className="flex items-center space-x-2 mb-1">
-                      <Calendar className="w-3 h-3" />
-                      <span className="text-xs font-medium">{message.eventDetails.title}</span>
-                    </div>
-                    <p className="text-xs opacity-80">{message.eventDetails.description}</p>
-                    {message.eventDetails.time && (
-                      <p className="text-xs opacity-80 mt-1">Time: {message.eventDetails.time}</p>
-                    )}
-                  </div>
-                )}
               </div>
+
+              {markingMode === "start" && markedMessages.length === 0 && (
+                <div className="absolute -left-20 top-1/2 transform -translate-y-1/2 bg-indigo-600 text-white px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                  Mark as Start
+                </div>
+              )}
+
+              {markingMode === "end" && markedMessages.length === 1 && (
+                <div className="absolute -left-20 top-1/2 transform -translate-y-1/2 bg-indigo-600 text-white px-2 py-1 rounded text-xs opacity-0 group-hover:opacity-100 transition-opacity">
+                  Mark as End
+                </div>
+              )}
             </div>
-          ))
-        )}
+
+            {!markedMessages.includes(message.id) && markingMode !== "none" && (
+              <div className="flex items-center ml-2">
+                <div
+                  className="w-5 h-5 rounded border border-gray-300 dark:border-gray-600 cursor-pointer hover:border-indigo-500 dark:hover:border-indigo-400"
+                  onClick={() => handleMarkMessage(message.id)}
+                ></div>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
 
       {/* AI Suggestions */}
