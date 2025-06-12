@@ -8,6 +8,7 @@ import ChatList from "../components/ChatList"
 import ChatWindow from "../components/ChatWindow"
 import FilterModal from "../components/FilterModal"
 import SummarizeModal from "../components/SummarizeModal"
+import { apiService, type TelegramGroup } from "../services/api"
 
 interface ChatsProps {
   user: User | null
@@ -20,65 +21,48 @@ const Chats: React.FC<ChatsProps> = ({ user }) => {
   const [searchTerm, setSearchTerm] = useState("")
   const [showFilterModal, setShowFilterModal] = useState(false)
   const [showSummarizeModal, setShowSummarizeModal] = useState(false)
+  const [isLoadingChats, setIsLoadingChats] = useState(true)
 
   useEffect(() => {
-    // Mock chat data
-    const mockChats: Chat[] = [
-      {
-        id: "chat1",
-        name: "Green Meadows Community",
-        type: "group",
-        avatar:
-          "https://images.pexels.com/photos/1643383/pexels-photo-1643383.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop",
-        unreadCount: 3,
-        members: 245,
-        lastMessage: {
-          id: "msg1",
-          chatId: "chat1",
-          senderId: "user1",
-          senderName: "Alice Johnson",
-          content: "Community meeting scheduled for tomorrow at 7 PM",
-          timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-          isImportant: true,
-        },
-      },
-      {
-        id: "chat2",
-        name: "Tech Entrepreneurs Hub",
-        type: "group",
-        avatar:
-          "https://images.pexels.com/photos/3184291/pexels-photo-3184291.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop",
-        unreadCount: 7,
-        members: 89,
-        lastMessage: {
-          id: "msg2",
-          chatId: "chat2",
-          senderId: "user2",
-          senderName: "Bob Smith",
-          content: "New startup funding opportunities available",
-          timestamp: new Date(Date.now() - 1 * 60 * 60 * 1000),
-        },
-      },
-      {
-        id: "chat3",
-        name: "Neighborhood Watch",
-        type: "group",
-        avatar:
-          "https://images.pexels.com/photos/1181396/pexels-photo-1181396.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop",
-        unreadCount: 1,
-        members: 156,
-        lastMessage: {
-          id: "msg3",
-          chatId: "chat3",
-          senderId: "user3",
-          senderName: "Carol Davis",
-          content: "Security patrol schedule updated",
-          timestamp: new Date(Date.now() - 30 * 60 * 1000),
-        },
-      },
-    ]
-    setChats(mockChats)
-  }, [])
+    const fetchGroups = async () => {
+      setIsLoadingChats(true)
+      try {
+        const result = await apiService.getGroups()
+        if (result.success && result.data) {
+          // Convert Telegram groups to Chat format
+          const convertedChats: Chat[] = result.data.groups.map((group: TelegramGroup) => ({
+            id: group.id,
+            name: group.name,
+            type: group.type,
+            avatar: group.avatar,
+            unreadCount: group.unreadCount,
+            members: group.members,
+            lastMessage: group.lastMessage
+              ? {
+                  ...group.lastMessage,
+                  timestamp: new Date(group.lastMessage.timestamp),
+                }
+              : undefined,
+          }))
+          setChats(convertedChats)
+        } else {
+          console.error("Failed to fetch groups:", result.error)
+        }
+      } catch (error) {
+        console.error("Error fetching groups:", error)
+      } finally {
+        setIsLoadingChats(false)
+      }
+    }
+
+    if (user) {
+      fetchGroups()
+    }
+  }, [user])
+
+  const handleMessagesUpdate = (updatedMessages: Message[]) => {
+    setMessages(updatedMessages)
+  }
 
   const filteredChats = chats.filter((chat) => chat.name.toLowerCase().includes(searchTerm.toLowerCase()))
 
@@ -155,7 +139,24 @@ const Chats: React.FC<ChatsProps> = ({ user }) => {
 
               {/* Chat List */}
               <div className="flex-1 overflow-y-auto">
-                <ChatList chats={filteredChats} selectedChat={selectedChat} onSelectChat={setSelectedChat} />
+                {isLoadingChats ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+                    <span className="ml-3 text-gray-600 dark:text-gray-400">Loading chats...</span>
+                  </div>
+                ) : filteredChats.length === 0 ? (
+                  <div className="flex items-center justify-center h-full">
+                    <div className="text-center p-6">
+                      <MessageSquare className="w-12 h-12 text-gray-300 mx-auto mb-4" />
+                      <p className="text-gray-500 dark:text-gray-400">No chats found</p>
+                      <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">
+                        {searchTerm ? "Try a different search term" : "Join some groups to get started"}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <ChatList chats={filteredChats} selectedChat={selectedChat} onSelectChat={setSelectedChat} />
+                )}
               </div>
             </div>
           </div>
@@ -164,7 +165,12 @@ const Chats: React.FC<ChatsProps> = ({ user }) => {
           <div className="lg:col-span-3">
             <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-700 h-full overflow-hidden">
               {selectedChat ? (
-                <ChatWindow chat={selectedChat} messages={messages} user={user} />
+                <ChatWindow
+                  chat={selectedChat}
+                  messages={messages}
+                  user={user}
+                  onMessagesUpdate={handleMessagesUpdate}
+                />
               ) : (
                 <div className="h-full flex items-center justify-center">
                   <div className="text-center">

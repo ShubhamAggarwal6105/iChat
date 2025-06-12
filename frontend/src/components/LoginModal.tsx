@@ -4,6 +4,7 @@ import type React from "react"
 import { useState } from "react"
 import { X, MessageCircle, ArrowLeft } from "lucide-react"
 import type { User } from "../types"
+import { apiService } from "../services/api"
 
 interface LoginModalProps {
   isOpen: boolean
@@ -29,37 +30,44 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin }) => 
       return
     }
     setIsLoading(true)
-    // Simulate API call
-    setTimeout(() => {
-      setIsLoading(false)
+
+    const result = await apiService.sendVerificationCode(phoneNumber)
+    setIsLoading(false)
+
+    if (result.success) {
       setStep("otp")
-    }, 1500)
+    } else {
+      alert(`Error: ${result.error}`)
+    }
   }
 
   const handleOtpSubmit = async () => {
-    if (!otp.trim() || otp.length !== 6) {
-      alert("Please enter a valid 6-digit OTP")
+    if (!otp.trim() || otp.length !== 5) {
+      alert("Please enter a valid 5-digit OTP")
       return
     }
     setIsLoading(true)
-    // Simulate API call
-    setTimeout(() => {
-      const mockUser: User = {
-        id: "1",
-        name: "John Doe",
-        username: "johndoe",
-        avatar:
-          "https://images.pexels.com/photos/614810/pexels-photo-614810.jpeg?auto=compress&cs=tinysrgb&w=150&h=150&fit=crop",
-        telegramId: phoneNumber,
+
+    const result = await apiService.verifyCode(phoneNumber, otp)
+    setIsLoading(false)
+
+    if (result.success && result.data) {
+      const userData = {
+        id: result.data.user.id,
+        name: result.data.user.name,
+        username: result.data.user.username,
+        avatar: result.data.user.avatar,
+        telegramId: result.data.user.phone,
       }
-      onLogin(mockUser)
-      setIsLoading(false)
+      onLogin(userData)
       onClose()
       // Reset state
       setStep("platform")
       setPhoneNumber("")
       setOtp("")
-    }, 1500)
+    } else {
+      alert(`Error: ${result.error}`)
+    }
   }
 
   const handleBack = () => {
@@ -175,7 +183,7 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin }) => 
 
         {/* OTP Input */}
         {step === "otp" && (
-          <div className="space-y-6">
+          <div className="space-y-5">
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Verification Code
@@ -183,17 +191,17 @@ const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onClose, onLogin }) => 
               <input
                 type="text"
                 value={otp}
-                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
-                placeholder="123456"
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, "").slice(0, 5))}
+                placeholder="12345"
                 className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-transparent bg-white dark:bg-gray-800 text-gray-900 dark:text-white text-center text-2xl tracking-widest"
-                maxLength={6}
+                maxLength={5}
               />
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">Code sent to {phoneNumber}</p>
             </div>
 
             <button
               onClick={handleOtpSubmit}
-              disabled={isLoading || otp.length !== 6}
+              disabled={isLoading || otp.length !== 5}
               className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white py-3 px-6 rounded-xl font-medium transition-colors flex items-center justify-center"
             >
               {isLoading ? (

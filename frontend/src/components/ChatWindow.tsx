@@ -4,70 +4,77 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { Send, Bot, Copy, Shield, Calendar, Star, MoreVertical, Phone, Video } from "lucide-react"
 import type { Chat, Message, User } from "../types"
+import { apiService, type TelegramMessage } from "../services/api"
 
 interface ChatWindowProps {
   chat: Chat
   messages: Message[]
   user: User | null
+  onMessagesUpdate?: (messages: Message[]) => void
 }
 
-const ChatWindow: React.FC<ChatWindowProps> = ({ chat, messages: initialMessages, user }) => {
+const ChatWindow: React.FC<ChatWindowProps> = ({ chat, messages: propMessages, user, onMessagesUpdate }) => {
   const [messages, setMessages] = useState<Message[]>([])
   const [newMessage, setNewMessage] = useState("")
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null)
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([])
   const [showAiSuggestions, setShowAiSuggestions] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
   useEffect(() => {
-    // Mock messages for the selected chat
-    const mockMessages: Message[] = [
-      {
-        id: "1",
-        chatId: chat.id,
-        senderId: "user1",
-        senderName: "Alice Johnson",
-        content:
-          "Community meeting scheduled for tomorrow at 7 PM in the main hall. Please bring your building maintenance concerns.",
-        timestamp: new Date(Date.now() - 2 * 60 * 60 * 1000),
-        isImportant: true,
-        hasEvent: true,
-        eventDetails: {
-          title: "Community Meeting",
-          date: new Date(Date.now() + 24 * 60 * 60 * 1000),
-          time: "7:00 PM",
-          description: "Monthly community meeting",
-          type: "meeting",
-        },
-      },
-      {
-        id: "2",
-        chatId: chat.id,
-        senderId: "user2",
-        senderName: "Bob Smith",
-        content: "The elevator in Building A will be under maintenance this weekend from 9 AM to 5 PM.",
-        timestamp: new Date(Date.now() - 1 * 60 * 60 * 1000),
-        isImportant: true,
-      },
-      {
-        id: "3",
-        chatId: chat.id,
-        senderId: "user3",
-        senderName: "Carol Davis",
-        content: "Has anyone seen my cat? It's been missing since yesterday. Orange tabby, very friendly.",
-        timestamp: new Date(Date.now() - 30 * 60 * 1000),
-      },
-      {
-        id: "4",
-        chatId: chat.id,
-        senderId: "user4",
-        senderName: "David Wilson",
-        content: "Breaking: Local government announces new tax benefits for residential communities.",
-        timestamp: new Date(Date.now() - 15 * 60 * 1000),
-        isFakeNews: false,
-      },
-    ]
-    setMessages(mockMessages)
-  }, [chat.id])
+    const fetchMessages = async () => {
+      if (!chat.id) return
+
+      setIsLoading(true)
+      try {
+        const result = await apiService.getMessages(chat.id)
+        if (result.success && result.data) {
+          // Convert Telegram messages to Message format
+          const convertedMessages: Message[] = result.data.messages.map((msg: TelegramMessage) => ({
+            id: msg.id,
+            chatId: msg.chatId,
+            senderId: msg.senderId,
+            senderName: msg.senderName,
+            content: msg.content,
+            timestamp: new Date(msg.timestamp),
+            isImportant: msg.isImportant,
+            hasEvent: msg.hasEvent,
+            eventDetails: msg.eventDetails
+              ? {
+                  ...msg.eventDetails,
+                  date: new Date(msg.eventDetails.date),
+                }
+              : undefined,
+            isFakeNews: msg.isFakeNews,
+          }))
+
+          // Sort messages by timestamp (newest first, then reverse for display)
+          const sortedMessages = convertedMessages.sort(
+            (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+          )
+
+          setMessages(sortedMessages)
+
+          // Notify parent component if callback provided
+          if (onMessagesUpdate) {
+            onMessagesUpdate(sortedMessages)
+          }
+        } else {
+          console.error("Failed to fetch messages:", result.error)
+          // Fallback to prop messages if API fails
+          setMessages(propMessages)
+        }
+      } catch (error) {
+        console.error("Error fetching messages:", error)
+        // Fallback to prop messages if API fails
+        setMessages(propMessages)
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchMessages()
+  }, [chat.id, propMessages, onMessagesUpdate])
 
   const handleSendMessage = () => {
     if (!newMessage.trim() || !user) return
@@ -121,6 +128,36 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chat, messages: initialMessages
     }
   }
 
+  const formatTimestamp = (timestamp: Date) => {
+    const now = new Date()
+    const messageDate = new Date(timestamp)
+    const diffInHours = (now.getTime() - messageDate.getTime()) / (1000 * 60 * 60)
+
+    if (diffInHours < 24) {
+      return messageDate.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+      })
+    } else if (diffInHours < 48) {
+      return (
+        "Yesterday " +
+        messageDate.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      )
+    } else {
+      return (
+        messageDate.toLocaleDateString() +
+        " " +
+        messageDate.toLocaleTimeString([], {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      )
+    }
+  }
+
   return (
     <div className="h-full flex flex-col">
       {/* Chat Header */}
@@ -164,57 +201,85 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chat, messages: initialMessages
 
       {/* Messages */}
       <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-gray-50 dark:bg-gray-900/50">
-        {messages.map((message) => (
-          <div key={message.id} className={`flex ${message.senderId === user?.id ? "justify-end" : "justify-start"}`}>
-            <div
-              className={`max-w-xs lg:max-w-md px-6 py-4 rounded-2xl cursor-pointer transition-all hover:shadow-lg ${
-                message.senderId === user?.id
-                  ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white"
-                  : "bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-gray-700"
-              } ${selectedMessage?.id === message.id ? "ring-2 ring-indigo-500" : ""}`}
-              onClick={() => handleMessageClick(message)}
-            >
-              {message.senderId !== user?.id && (
-                <p className="text-xs font-medium mb-2 opacity-70">{message.senderName}</p>
-              )}
+        {isLoading ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+            <span className="ml-3 text-gray-600 dark:text-gray-400">Loading messages...</span>
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex items-center justify-center h-full">
+            <div className="text-center">
+              <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Send className="w-8 h-8 text-gray-400" />
+              </div>
+              <p className="text-gray-500 dark:text-gray-400">No messages yet</p>
+              <p className="text-sm text-gray-400 dark:text-gray-500 mt-1">Start the conversation!</p>
+            </div>
+          </div>
+        ) : (
+          messages.map((message) => (
+            <div key={message.id} className={`flex ${message.senderId === user?.id ? "justify-end" : "justify-start"}`}>
+              <div
+                className={`max-w-xs lg:max-w-md px-6 py-4 rounded-2xl cursor-pointer transition-all hover:shadow-lg ${
+                  message.senderId === user?.id
+                    ? "bg-gradient-to-r from-indigo-600 to-purple-600 text-white"
+                    : "bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm border border-gray-200 dark:border-gray-700"
+                } ${selectedMessage?.id === message.id ? "ring-2 ring-indigo-500" : ""}`}
+                onClick={() => handleMessageClick(message)}
+              >
+                {message.senderId !== user?.id && (
+                  <p className="text-xs font-medium mb-2 opacity-70">{message.senderName}</p>
+                )}
 
-              <p className="text-sm leading-relaxed">{message.content}</p>
+                <p className="text-sm leading-relaxed">{message.content}</p>
 
-              <div className="flex items-center justify-between mt-3">
-                <span className="text-xs opacity-70">
-                  {message.timestamp.toLocaleTimeString([], {
-                    hour: "2-digit",
-                    minute: "2-digit",
-                  })}
-                </span>
+                <div className="flex items-center justify-between mt-3">
+                  <span className="text-xs opacity-70">{formatTimestamp(message.timestamp)}</span>
 
-                <div className="flex items-center space-x-1">
-                  {message.isImportant && <Star className="w-3 h-3 text-yellow-400 fill-current" />}
-                  {message.hasEvent && (
+                  <div className="flex items-center space-x-1">
+                    {message.isImportant && <Star className="w-3 h-3 text-yellow-400 fill-current" />}
+                    {message.hasEvent && (
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          addToCalendar(message)
+                        }}
+                        className="p-1 hover:bg-black/10 rounded"
+                        title="Add to calendar"
+                      >
+                        <Calendar className="w-3 h-3" />
+                      </button>
+                    )}
                     <button
                       onClick={(e) => {
                         e.stopPropagation()
-                        addToCalendar(message)
+                        checkFakeNews(message)
                       }}
                       className="p-1 hover:bg-black/10 rounded"
+                      title="Fact check"
                     >
-                      <Calendar className="w-3 h-3" />
+                      <Shield className="w-3 h-3" />
                     </button>
-                  )}
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation()
-                      checkFakeNews(message)
-                    }}
-                    className="p-1 hover:bg-black/10 rounded"
-                  >
-                    <Shield className="w-3 h-3" />
-                  </button>
+                  </div>
                 </div>
+
+                {/* Event Details */}
+                {message.hasEvent && message.eventDetails && (
+                  <div className="mt-3 p-3 bg-black/10 rounded-lg">
+                    <div className="flex items-center space-x-2 mb-1">
+                      <Calendar className="w-3 h-3" />
+                      <span className="text-xs font-medium">{message.eventDetails.title}</span>
+                    </div>
+                    <p className="text-xs opacity-80">{message.eventDetails.description}</p>
+                    {message.eventDetails.time && (
+                      <p className="text-xs opacity-80 mt-1">Time: {message.eventDetails.time}</p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
-          </div>
-        ))}
+          ))
+        )}
       </div>
 
       {/* AI Suggestions */}
